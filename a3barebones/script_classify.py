@@ -26,17 +26,48 @@ Check utilities.py for example usage.
 """
 def cross_validate(K, X, Y, Algorithm, parameters):
     all_errors = np.zeros((len(parameters), K))
+
+    indices = np.arange(X.shape[0])
+    np.random.shuffle(indices)
+
+    fold_size = len(indices) // K
+    
+    start = stop = 0
     for k in range(K):
+        start = stop
+        stop += fold_size
+        if k < len(indices) % K:
+            stop += 1
+
+        train_idx = np.concatenate([indices[:start], indices[stop:]])
+        test_idx = indices[start:stop]
+
+        Xtrain = X[train_idx]
+        Ytrain = Y[train_idx]
+        
+        Xtest = X[test_idx]
+        Ytest = Y[test_idx]
+
         for i, params in enumerate(parameters):
-            pass
+            classifier = Algorithm(parameters)
+            classifier.learn(Xtrain, Ytrain)
+            
+            predictions = classifier.predict(Xtest)
+            all_errors[i][k] = geterror(Ytest, predictions)
+
 
     avg_errors = np.mean(all_errors, axis=1)
+    
+    best_parameters, best_error = parameters[0], avg_errors[0]
+    print("===\n", Algorithm)
     for i, params in enumerate(parameters):
         print('Cross validate parameters:', params)
         print('average error:', avg_errors[i])
+        if avg_errors[i] < best_error:
+            best_parameters, best_error  = parameters[i], avg_errors[i]
 
-    best_parameters = parameters[0]
-    return best_parameters
+    
+    return best_parameters, best_error
 
 if __name__ == '__main__':
 
@@ -59,14 +90,14 @@ if __name__ == '__main__':
     dataset = args.dataset
 
 
-
     classalgs = {
         'Random': algs.Classifier,
-        'Naive Bayes': algs.NaiveBayes,
         'Linear Regression': algs.LinearRegressionClass,
-        'Logistic Regression': algs.LogisticReg,
-        'Neural Network': algs.NeuralNet,
-        'Kernel Logistic Regression': algs.KernelLogisticRegression,
+        'Naive Bayes': algs.NaiveBayes,
+        
+        # 'Logistic Regression': algs.LogisticReg,
+        # 'Neural Network': algs.NeuralNet,
+        # 'Kernel Logistic Regression': algs.KernelLogisticRegression,
     }
     numalgs = len(classalgs)
 
@@ -125,11 +156,13 @@ if __name__ == '__main__':
         best_parameters = {}
         for learnername, Learner in classalgs.items():
             params = parameters.get(learnername, [ None ])
-            best_parameters[learnername] = cross_validate(10, Xtrain, Ytrain, Learner, params)
+            best_param, error = cross_validate(5, Xtrain, Ytrain, Learner, params)
+            best_parameters[learnername] = best_param
+            errors[learnername][r] = error
 
-        for learnername, Learner in classalgs.items():
-            params = best_parameters[learnername]
-            learner = Learner(params)
+        # for learnername, Learner in classalgs.items():
+        #     params = best_parameters[learnername]
+        #     learner = Learner(params)
 
     for learnername in classalgs:
         aveerror = np.mean(errors[learnername])

@@ -1,5 +1,5 @@
 import numpy as np
-
+from collections import Counter
 import MLCourse.utilities as utils
 
 # Susy: ~50 error
@@ -56,6 +56,32 @@ class NaiveBayes(Classifier):
         # If usecolumnones is False, it ignores this last feature
         self.params = utils.update_dictionary_items({'usecolumnones': False}, parameters)
 
+    def get_prior(self, ytrain):
+        unique, counts = np.unique(ytrain, return_counts=True)
+        cnts =  dict(zip(unique, counts))
+
+        self.priors = {k: v/len(ytrain) for k, v in cnts.items()}
+
+    def get_mean_variance(self, X, Y):
+        mean_std = {}
+        for class_i in np.unique(Y):
+            idx = np.nonzero(Y[:,0] == class_i)  
+            X_i = X[idx]
+            
+            means = np.mean(X_i, axis=0)
+            stds = np.std(X_i, axis=0)
+            
+            m_s = {}
+            for i, (mu, sigma) in enumerate(zip(means, stds)):
+                m_s[i] = (mu, sigma)
+            
+            mean_std[class_i] = m_s
+        
+        self.mean_std = mean_std
+
+    def gaussian_probability(self, x, mu, sigma):
+        exp = np.exp(-0.5 * np.square((x - mu) / sigma))
+        return exp / sigma * np.sqrt(2 * np.pi)
 
     def learn(self, Xtrain, ytrain):
         # obtain number of classes
@@ -63,11 +89,31 @@ class NaiveBayes(Classifier):
             self.numclasses = 2
         else:
             raise Exception('Can only handle binary classification')
+        
+        if not self.params["usecolumnones"]:
+            Xtrain = Xtrain[:, :-1]
+            
+        self.get_prior(ytrain)
+        self.get_mean_variance(Xtrain, ytrain)
 
     def predict(self, Xtest):
         numsamples = Xtest.shape[0]
+        probabilities = {}
         predictions = []
 
+        if not self.params["usecolumnones"]:
+            Xtest = Xtest[:, :-1]
+
+        for row in Xtest:
+            for class_i, prior in self.priors.items():
+                p = prior
+                for i, feature in enumerate(row):
+                    p *= self.gaussian_probability(feature, self.mean_std[class_i][i][0], self.mean_std[class_i][i][1])
+                probabilities[class_i] = p
+            
+            argmax = max(probabilities.keys(), key=(lambda k: probabilities[k]))
+            predictions.append(argmax)
+        
         return np.reshape(predictions, [numsamples, 1])
 
 # Susy: ~23 error
@@ -78,9 +124,12 @@ class LogisticReg(Classifier):
 
     def learn(self, X, y):
         pass
-
+    
     def predict(self, Xtest):
-        pass
+        ytest = utils.sigmoid(np.dot(Xtest, self.weights))
+        ytest[ytest > 0.5] = 1
+        ytest[ytest < 0.5] = 0
+        return ytest
 
 # Susy: ~23 error (4 hidden units)
 class NeuralNet(Classifier):
