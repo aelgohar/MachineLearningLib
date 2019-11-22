@@ -49,12 +49,11 @@ def cross_validate(K, X, Y, Algorithm, parameters):
         Ytest = Y[test_idx]
 
         for i, params in enumerate(parameters):
-            classifier = Algorithm(parameters)
+            classifier = Algorithm(params)
             classifier.learn(Xtrain, Ytrain)
             
             predictions = classifier.predict(Xtest)
             all_errors[i][k] = geterror(Ytest, predictions)
-
 
     avg_errors = np.mean(all_errors, axis=1)
     
@@ -65,9 +64,8 @@ def cross_validate(K, X, Y, Algorithm, parameters):
         print('average error:', avg_errors[i])
         if avg_errors[i] < best_error:
             best_parameters, best_error  = parameters[i], avg_errors[i]
-
     
-    return best_parameters, best_error
+    return best_parameters
 
 if __name__ == '__main__':
 
@@ -91,13 +89,13 @@ if __name__ == '__main__':
 
 
     classalgs = {
-        'Random': algs.Classifier,
-        'Linear Regression': algs.LinearRegressionClass,
-        'Naive Bayes': algs.NaiveBayes,
-        
+        # 'Random': algs.Classifier,
+        # 'Linear Regression': algs.LinearRegressionClass,
+        # 'Naive Bayes': algs.NaiveBayes,
         # 'Logistic Regression': algs.LogisticReg,
         # 'Neural Network': algs.NeuralNet,
-        # 'Kernel Logistic Regression': algs.KernelLogisticRegression,
+
+        'Kernel Logistic Regression': algs.KernelLogisticRegression,
     }
     numalgs = len(classalgs)
 
@@ -117,15 +115,16 @@ if __name__ == '__main__':
         ],
         'Neural Network': [
             { 'epochs': 100, 'nh': 4 },
-            { 'epochs': 100, 'nh': 8 },
-            { 'epochs': 100, 'nh': 16 },
-            { 'epochs': 100, 'nh': 32 },
+            # { 'epochs': 100, 'nh': 8 },
+            # { 'epochs': 100, 'nh': 16 },
+            # { 'epochs': 100, 'nh': 32 },
         ],
         'Kernel Logistic Regression': [
-            { 'centers': 10, 'stepsize': 0.01 },
-            { 'centers': 20, 'stepsize': 0.01 },
-            { 'centers': 40, 'stepsize': 0.01 },
-            { 'centers': 80, 'stepsize': 0.01 },
+            # { 'centers': 10, 'stepsize': 0.01 },
+            # { 'centers': 20, 'stepsize': 0.01 },
+            # { 'centers': 40, 'stepsize': 0.01 , 'kernel': 'linear'},
+            { 'centers': 40, 'stepsize': 0.01, 'kernel': 'hamming' },
+            # { 'centers': 80, 'stepsize': 0.01 },
         ]
     }
 
@@ -156,13 +155,17 @@ if __name__ == '__main__':
         best_parameters = {}
         for learnername, Learner in classalgs.items():
             params = parameters.get(learnername, [ None ])
-            best_param, error = cross_validate(5, Xtrain, Ytrain, Learner, params)
+            best_param = cross_validate(5, Xtrain, Ytrain, Learner, params)
             best_parameters[learnername] = best_param
-            errors[learnername][r] = error
 
-        # for learnername, Learner in classalgs.items():
-        #     params = best_parameters[learnername]
-        #     learner = Learner(params)
+        for learnername, Learner in classalgs.items():
+            params = best_parameters[learnername]
+            learner = Learner(params)
+            learner.learn(Xtrain, Ytrain)
+            pre = learner.predict(Xtest)
+            err = geterror(Ytest, pre)
+            errors[learnername][r] = err
+            print(f"Error for {learnername} = {err}")
 
     for learnername in classalgs:
         aveerror = np.mean(errors[learnername])

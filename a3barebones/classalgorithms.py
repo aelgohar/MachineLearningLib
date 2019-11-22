@@ -63,14 +63,18 @@ class NaiveBayes(Classifier):
         self.priors = {k: v/len(ytrain) for k, v in cnts.items()}
 
     def get_mean_variance(self, X, Y):
+        # map of {class : {features: means and standard deviations}}
         mean_std = {}
         for class_i in np.unique(Y):
+            # get indices where y == class
             idx = np.nonzero(Y[:,0] == class_i)  
             X_i = X[idx]
             
+            # get mean, std of all features
             means = np.mean(X_i, axis=0)
             stds = np.std(X_i, axis=0)
             
+            # {feature: (mu, sigma)}
             m_s = {}
             for i, (mu, sigma) in enumerate(zip(means, stds)):
                 m_s[i] = (mu, sigma)
@@ -78,10 +82,6 @@ class NaiveBayes(Classifier):
             mean_std[class_i] = m_s
         
         self.mean_std = mean_std
-
-    def gaussian_probability(self, x, mu, sigma):
-        exp = np.exp(-0.5 * np.square((x - mu) / sigma))
-        return exp / sigma * np.sqrt(2 * np.pi)
 
     def learn(self, Xtrain, ytrain):
         # obtain number of classes
@@ -108,28 +108,31 @@ class NaiveBayes(Classifier):
             for class_i, prior in self.priors.items():
                 p = prior
                 for i, feature in enumerate(row):
-                    p *= self.gaussian_probability(feature, self.mean_std[class_i][i][0], self.mean_std[class_i][i][1])
+                    p *= utils.gaussian_pdf(feature, self.mean_std[class_i][i][0], self.mean_std[class_i][i][1])
+                
                 probabilities[class_i] = p
-            
-            argmax = max(probabilities.keys(), key=(lambda k: probabilities[k]))
+                # get class with max probability and append it
+                argmax = max(probabilities.keys(), key=(lambda k: probabilities[k]))
             predictions.append(argmax)
         
+        # return y's
         return np.reshape(predictions, [numsamples, 1])
 
 # Susy: ~23 error
 class LogisticReg(Classifier):
     def __init__(self, parameters = {}):
-        self.params = utils.update_dictionary_items({'stepsize': 0.01, 'epochs': 100}, parameters)
+        self.params = utils.update_dictionary_items({'stepsize': 0.01, 'epochs': 1000}, parameters)
         self.weights = None
 
     def learn(self, X, y):
-        pass
-    
+        self.weights = np.random.rand(X.shape[1]).reshape(X.shape[1], 1)
+
+        for i in range(self.params['epochs']):
+            h = utils.sigmoid(X @ self.weights)
+            self.weights = self.weights - self.params['stepsize'] * (X.T @ (h - y))
+        
     def predict(self, Xtest):
-        ytest = utils.sigmoid(np.dot(Xtest, self.weights))
-        ytest[ytest > 0.5] = 1
-        ytest[ytest < 0.5] = 0
-        return ytest
+        return np.round(utils.sigmoid(np.dot(Xtest, self.weights)))
 
 # Susy: ~23 error (4 hidden units)
 class NeuralNet(Classifier):
@@ -152,10 +155,56 @@ class NeuralNet(Classifier):
         self.wo = None
 
     def learn(self, Xtrain, ytrain):
-        pass
+        numsamples, numfeatures = Xtrain.shape
+        nh = self.params['nh']
+        
+        self.wi = np.random.rand(nh, numfeatures)   # shape: 4, 9
+        self.wo = np.random.rand(1, nh) # shape: 1, 4
 
-    def predict(self,Xtest):
-        pass
+        for i in range(self.params['epochs']):
+            for j in np.random.permutation(numsamples):
+                # feed forward
+                ah, ao = self.evaluate(Xtrain[j])
+                ah = ah.reshape(1, nh)
+                ao = ao.reshape(-1, 1)
+                x = Xtrain[j].reshape(-1, 1)
+
+                # back prop
+                delta2 = np.subtract(ao, ytrain[j])
+                update2 = ah.T.dot(delta2)   # shape: 1 x nh
+                
+                delta1 = np.multiply(delta2.dot(self.wo), self.dsig(ah))
+                update1 = x.dot(delta1)
+                # d_h = np.multiply(self.wo.T @ oi, np.multiply(ah, 1 - ah)).reshape(-1,1)
+                
+                # self.wo -=  self.params['stepsize'] * delta2 @ ah.reshape(1, nh)
+                # self.wi -= self.params['stepsize'] * np.dot(d_h, Xtrain[j].reshape(1,-1))
+                self.wo -=  self.params['stepsize'] * update2.T
+                self.wi -= self.params['stepsize'] * update1.T
+
+    def dsig(self,x):
+        return np.multiply(x, 1 - x)
+        
+    def predict(self, Xtest):
+        # y = []
+        _, ao = self.evaluate(Xtest)
+        return np.round(ao)
+        # for i in range(len(Xtest)):
+        #     # go through rows and add output to y
+        #     if ao[i] >= 0.5:
+        #         y.append([1])
+        #     else:
+        #         y.append([0])
+        #     # y.append(ao)
+        
+        # # convert to 0's and 1's and return
+        # return y
+
+    def get_cost(self, yhat, y):
+        return -1 * (y * np.log(yhat) + (1 - y) * np.log(1 - yhat))
+
+    def dloss(self, yhat, y):
+        return -1 * (np.divide(y, yhat) - np.divide(1 - y, 1 - yhat))
 
     def evaluate(self, inputs):
         # hidden activations
@@ -170,7 +219,9 @@ class NeuralNet(Classifier):
         )
 
     def update(self, inputs, outputs):
-        pass
+        ah, ao = self.evaluate(inputs)
+        
+        loss = self.loss(ao, outputs)
 
 # Note: high variance in errors! Make sure to run multiple times
 # Susy: ~28 error (40 centers)
@@ -180,11 +231,62 @@ class KernelLogisticRegression(LogisticReg):
             'stepsize': 0.01,
             'epochs': 100,
             'centers': 10,
+            'kernel': 'linear'
         }, parameters)
         self.weights = None
 
     def learn(self, X, y):
-        pass
+        kernel = self.params['kernel']
+        centers = self.params['centers']
+        self.centers = X[:centers]
 
+        Ktrain = np.zeros((len(X), self.params['centers']))
+        
+        if kernel == 'linear':
+            numsamples, numfeatures = X.shape
+            for i in range(numsamples):
+                for j in range(centers):
+                    Ktrain[i][j] = self.linear(self.centers[j], X[i])
+        
+        elif kernel == 'hamming':
+            X = X.reshape(-1, 1)
+            numsamples, numfeatures = X.shape
+            for i in range(numsamples):
+                for j in range(centers):
+                    Ktrain[i][j] = self.hamming_distance(self.centers[j], X[i])
+        else:
+            raise Exception('KernelLogisticRegression -> can only handle linear and hamming kernels')
+        
+        self.weights = np.random.rand(centers, 1)
+
+        for i in range(self.params['epochs']):
+            for j in np.random.permutation(numsamples):
+                k = Ktrain[j].reshape(1, -1)
+                h = utils.sigmoid(k @ self.weights)
+                self.weights = self.weights - self.params['stepsize'] * (k.T @ (h - y[j]))
+    
     def predict(self, Xtest):
-        pass
+        kernel = self.params['kernel']
+        centers = self.params['centers']
+        Ktest = np.zeros((len(Xtest), self.params['centers']))
+        
+        if kernel == 'linear':
+            numsamples, numfeatures = Xtest.shape
+            for i in range(numsamples):
+                for j in range(centers):
+                    Ktest[i][j] = self.linear(self.centers[j], Xtest[i])
+        
+        elif kernel == 'hamming':
+            Xtest = Xtest.reshape(-1, 1)
+            numsamples, numfeatures = Xtest.shape
+            for i in range(numsamples):
+                for j in range(centers):
+                    Ktest[i][j] = self.hamming_distance(self.centers[j], Xtest[i])
+
+        return np.round(utils.sigmoid(np.dot(Ktest, self.weights)))
+
+    def linear(self, x1, x2):
+        return np.dot(x1, x2)
+
+    def hamming_distance(self, x1, x2):
+        return np.count_nonzero(x1 != x2)
