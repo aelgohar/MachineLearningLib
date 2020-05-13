@@ -1,4 +1,4 @@
-# MachineLearningCourse
+# MachineLearningLib
 Implementations of a few regressors and classifiers using only numpy for my course
 
 
